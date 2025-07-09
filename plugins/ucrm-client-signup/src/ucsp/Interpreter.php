@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+
 namespace Ucsp;
 
 class Interpreter
@@ -21,9 +22,13 @@ class Interpreter
 
     private $ready = false;
 
+    private $config;
+
     public function __construct()
     {
         $this->api = \Ubnt\UcrmPluginSdk\Service\UcrmApi::create();
+        $configManager = \Ubnt\UcrmPluginSdk\Service\PluginConfigManager::create();
+        $this->config = $configManager->loadConfig();
     }
 
     public static function setDataUrl($dataUrl)
@@ -46,6 +51,16 @@ class Interpreter
             return file_get_contents(self::$dataUrl . 'frontendKey');
         }
         return false;
+    }
+
+    private function validateApiKey($apiKey)
+    {
+        if (empty($this->config['API_KEYS'])) {
+            return false;
+        }
+
+        $validKeys = array_map('trim', explode(',', $this->config['API_KEYS']));
+        return in_array($apiKey, $validKeys);
     }
 
     public function isReady()
@@ -94,13 +109,17 @@ class Interpreter
                 $explode = explode('||', $payloadDecoded->frontendKey, 2);
                 $payloadFrontendKey = $explode[0] ?? null;
                 $payloadCsrfToken = $explode[1] ?? null;
+                $apiKey = $payloadDecoded->apiKey ?? null;
 
                 if ($payloadFrontendKey != self::getFrontendKey()) {
                     throw new \UnexpectedValueException('frontendKey is invalid', 400);
                 }
 
-                if ($payloadCsrfToken === null || $payloadCsrfToken !== $_SESSION['csrf_token']) {
-                    throw new \UnexpectedValueException('csrf token is invalid', 400);
+                // Skip CSRF validation if a valid API key is provided
+                if (!$apiKey || !$this->validateApiKey($apiKey)) {
+                    if ($payloadCsrfToken === null || $payloadCsrfToken !== $_SESSION['csrf_token']) {
+                        throw new \UnexpectedValueException('csrf token is invalid', 400);
+                    }
                 }
 
                 if (! empty($payloadDecoded->api)) {
@@ -152,17 +171,17 @@ class Interpreter
         // # if three levels deep continue validation
         if (count($endpoint_array) == 3) {
 
-        // # If third level endpoint uses "second level ids" return true
+            // # If third level endpoint uses "second level ids" return true
             if (! empty($whitelist[$endpoint_array[0]]['second_level_ids'])) {
                 return in_array($endpoint_array[2], $whitelist[$endpoint_array[0]]['second_level_ids']);
 
-            // # If second level endpoint uses "third level ids" return true
+                // # If second level endpoint uses "third level ids" return true
             } elseif (! empty($whitelist[$endpoint_array[0]]['third_level_ids'])) {
                 return in_array($endpoint_array[1], $whitelist[$endpoint_array[0]]['third_level_ids']);
             }
             return false;
 
-        // # if two levels deep continue validation
+            // # if two levels deep continue validation
         } elseif (count($endpoint_array) == 2) {
             if (in_array($endpoint_array[1], $whitelist[$endpoint_array[0]])) {
                 return true;
