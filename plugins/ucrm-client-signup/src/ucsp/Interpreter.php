@@ -37,6 +37,15 @@ class Interpreter
         ],
     ];
 
+    // additional fields accepted only from trusted (valid API key) requests
+    private static $trustedWhitelist = [
+        'POST' => [
+            'clients' => [
+                'note' => null,
+            ],
+        ],
+    ];
+
     private static $dataUrl = null;
 
     private static $expectedIsLead = null;
@@ -169,7 +178,7 @@ class Interpreter
             )
             || ! is_string(($payload['api']['endpoint'] ?? null))
             || ! is_string(($payload['api']['type'] ?? null))
-            || ! self::validateRequest($payload['api']['type'], $payload['api']['endpoint'], $data)
+            || ! self::validateRequest($payload['api']['type'], $payload['api']['endpoint'], $data, $hasValidApiKey)
         ) {
             throw new \UnexpectedValueException('invalid request', 400);
         }
@@ -195,7 +204,7 @@ class Interpreter
         }
     }
 
-    private static function validateRequest(string $method, string $endpoint, $data): bool
+    private static function validateRequest(string $method, string $endpoint, $data, bool $trusted = false): bool
     {
         $method = strtoupper($method);
         $endpoint = trim($endpoint, '/');
@@ -218,7 +227,12 @@ class Interpreter
             return false;
         }
 
-        if (! self::validateFields($data, self::$whitelist[$method][$endpoint])) {
+        $schema = self::$whitelist[$method][$endpoint];
+        if ($trusted) {
+            $schema += self::$trustedWhitelist[$method][$endpoint] ?? [];
+        }
+
+        if (! self::validateFields($data, $schema)) {
             return false;
         }
 
